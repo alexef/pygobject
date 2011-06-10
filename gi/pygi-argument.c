@@ -1451,77 +1451,138 @@ _pygi_argument_to_object (GIArgument  *arg,
         }
         case GI_TYPE_TAG_ARRAY:
         {
-            GArray *array;
             GITypeInfo *item_type_info;
             GITypeTag item_type_tag;
             GITransfer item_transfer;
             gsize i, item_size;
 
-            array = arg->v_pointer;
+            GIArrayType array_type;
 
-            item_type_info = g_type_info_get_param_type (type_info, 0);
-            g_assert (item_type_info != NULL);
+            array_type = g_type_info_get_array_type(type_info);
+            switch (array_type) {
+                case GI_ARRAY_TYPE_C:
+                case GI_ARRAY_TYPE_BYTE_ARRAY:
+                case GI_ARRAY_TYPE_ARRAY:
+                {
+                    GArray *array;
+                    array = arg->v_pointer;
 
-            item_type_tag = g_type_info_get_tag (item_type_info);
-            item_transfer = transfer == GI_TRANSFER_CONTAINER ? GI_TRANSFER_NOTHING : transfer;
+                    item_type_info = g_type_info_get_param_type (type_info, 0);
+                    g_assert (item_type_info != NULL);
 
-            if (item_type_tag == GI_TYPE_TAG_UINT8) {
-                /* Return as a byte array */
-                if (arg->v_pointer == NULL) {
-                    object = PYGLIB_PyBytes_FromString ("");
-                    break;
-                }
+                    item_type_tag = g_type_info_get_tag (item_type_info);
+                    item_transfer = transfer == GI_TRANSFER_CONTAINER ? GI_TRANSFER_NOTHING : transfer;
 
-                object = PYGLIB_PyBytes_FromStringAndSize(array->data, array->len);
-                break;
-
-            } else {
-                if (arg->v_pointer == NULL) {
-                    object = PyList_New (0);
-                    break;
-                }
-
-                object = PyList_New (array->len);
-                if (object == NULL) {
-                    break;
-                }
-
-            }
-            item_size = g_array_get_element_size (array);
-
-            for (i = 0; i < array->len; i++) {
-                GIArgument item;
-                PyObject *py_item;
-                gboolean is_struct = FALSE;
-
-                if (item_type_tag == GI_TYPE_TAG_INTERFACE) {
-                    GIBaseInfo *iface_info = g_type_info_get_interface (item_type_info);
-                    switch (g_base_info_get_type (iface_info)) {
-                        case GI_INFO_TYPE_STRUCT:
-                        case GI_INFO_TYPE_BOXED:
-                            is_struct = TRUE;
-                        default:
+                    if (item_type_tag == GI_TYPE_TAG_UINT8) {
+                        /* Return as a byte array */
+                        if (arg->v_pointer == NULL) {
+                            object = PYGLIB_PyBytes_FromString ("");
                             break;
+                        }
+
+                        object = PYGLIB_PyBytes_FromStringAndSize(array->data, array->len);
+                        break;
+
+                    } else {
+                        if (arg->v_pointer == NULL) {
+                            object = PyList_New (0);
+                            break;
+                        }
+
+                        object = PyList_New (array->len);
+                        if (object == NULL) {
+                            break;
+                        }
+
                     }
-                    g_base_info_unref ( (GIBaseInfo *) iface_info);
-                }
+                    item_size = g_array_get_element_size (array);
 
-                if (is_struct) {
-                    item.v_pointer = &_g_array_index (array, GIArgument, i);
-                } else {
-                    memcpy (&item, &_g_array_index (array, GIArgument, i), item_size);
-                }
+                    for (i = 0; i < array->len; i++) {
+                        GIArgument item;
+                        PyObject *py_item;
+                        gboolean is_struct = FALSE;
 
-                py_item = _pygi_argument_to_object (&item, item_type_info, item_transfer);
-                if (py_item == NULL) {
-                    Py_CLEAR (object);
-                    _PyGI_ERROR_PREFIX ("Item %zu: ", i);
+                        if (item_type_tag == GI_TYPE_TAG_INTERFACE) {
+                            GIBaseInfo *iface_info = g_type_info_get_interface (item_type_info);
+                            switch (g_base_info_get_type (iface_info)) {
+                                case GI_INFO_TYPE_STRUCT:
+                                case GI_INFO_TYPE_BOXED:
+                                    is_struct = TRUE;
+                                default:
+                                    break;
+                            }
+                            g_base_info_unref ( (GIBaseInfo *) iface_info);
+                        }
+
+                        if (is_struct) {
+                            item.v_pointer = &_g_array_index (array, GIArgument, i);
+                        } else {
+                            memcpy (&item, &_g_array_index (array, GIArgument, i), item_size);
+                        }
+
+                        py_item = _pygi_argument_to_object (&item, item_type_info, item_transfer);
+                        if (py_item == NULL) {
+                            Py_CLEAR (object);
+                            _PyGI_ERROR_PREFIX ("Item %zu: ", i);
+                            break;
+                        }
+
+                        PyList_SET_ITEM (object, i, py_item);
+                    }
                     break;
                 }
+                case GI_ARRAY_TYPE_PTR_ARRAY:
+                {
+                    GPtrArray *array;
+                    array = arg->v_pointer;
 
-                PyList_SET_ITEM (object, i, py_item);
+                    item_type_info = g_type_info_get_param_type (type_info, 0);
+                    g_assert (item_type_info != NULL);
+
+                    item_type_tag = g_type_info_get_tag (item_type_info);
+                    item_transfer = transfer == GI_TRANSFER_CONTAINER ? GI_TRANSFER_NOTHING : transfer;
+
+                    if (item_type_tag == GI_TYPE_TAG_UINT8) {
+                        /* Return as a byte array */
+                        if (arg->v_pointer == NULL) {
+                            object = PYGLIB_PyBytes_FromString ("");
+                            break;
+                        }
+
+                        /* Note: i'm not sure about this */
+                        object = PYGLIB_PyBytes_FromStringAndSize((gchar*)array->pdata, array->len);
+                        break;
+
+                    } else {
+                        if (arg->v_pointer == NULL) {
+                            object = PyList_New (0);
+                            break;
+                        }
+
+                        object = PyList_New (array->len);
+                        if (object == NULL) {
+                            break;
+                        }
+
+                    }
+                    
+                    for (i = 0; i < array->len; i++) {
+                        GIArgument item;
+                        PyObject *py_item;
+
+                        item.v_pointer = g_ptr_array_index(array, i);
+
+                        py_item = _pygi_argument_to_object (&item, item_type_info, item_transfer);
+                        if (py_item == NULL) {
+                            Py_CLEAR (object);
+                            _PyGI_ERROR_PREFIX ("Item %zu: ", i);
+                            break;
+                        }
+
+                        PyList_SET_ITEM (object, i, py_item);
+                    }
+                }
             }
-
             g_base_info_unref ( (GIBaseInfo *) item_type_info);
             break;
         }
@@ -1905,37 +1966,78 @@ _pygi_argument_release (GIArgument   *arg,
             break;
         case GI_TYPE_TAG_ARRAY:
         {
-            GArray *array;
             gsize i;
 
             if (arg->v_pointer == NULL) {
                 return;
             }
 
-            array = arg->v_pointer;
+            GIArrayType array_type;
 
-            if ( (direction == GI_DIRECTION_IN && transfer != GI_TRANSFER_EVERYTHING)
-                    || (direction == GI_DIRECTION_OUT && transfer == GI_TRANSFER_EVERYTHING)) {
-                GITypeInfo *item_type_info;
-                GITransfer item_transfer;
+            array_type = g_type_info_get_array_type(type_info);
+            switch (array_type) {
+                case GI_ARRAY_TYPE_C:
+                case GI_ARRAY_TYPE_BYTE_ARRAY:
+                case GI_ARRAY_TYPE_ARRAY:
+                {
+                    GArray *array;
+                    array = arg->v_pointer;
 
-                item_type_info = g_type_info_get_param_type (type_info, 0);
+                    if ( (direction == GI_DIRECTION_IN && transfer != GI_TRANSFER_EVERYTHING)
+                            || (direction == GI_DIRECTION_OUT && transfer == GI_TRANSFER_EVERYTHING)) {
+                        GITypeInfo *item_type_info;
+                        GITransfer item_transfer;
 
-                item_transfer = direction == GI_DIRECTION_IN ? GI_TRANSFER_NOTHING : GI_TRANSFER_EVERYTHING;
+                        item_type_info = g_type_info_get_param_type (type_info, 0);
 
-                /* Free the items */
-                for (i = 0; i < array->len; i++) {
-                    GIArgument *item;
-                    item = &_g_array_index (array, GIArgument, i);
-                    _pygi_argument_release (item, item_type_info, item_transfer, direction);
+                        item_transfer = direction == GI_DIRECTION_IN ? GI_TRANSFER_NOTHING : GI_TRANSFER_EVERYTHING;
+
+                        /* Free the items */
+                        for (i = 0; i < array->len; i++) {
+                            GIArgument *item;
+                            item = &_g_array_index (array, GIArgument, i);
+                            _pygi_argument_release (item, item_type_info, item_transfer, direction);
+                        }
+
+                        g_base_info_unref ( (GIBaseInfo *) item_type_info);
+                    }
+
+                    if ( (direction == GI_DIRECTION_IN && transfer == GI_TRANSFER_NOTHING)
+                            || (direction == GI_DIRECTION_OUT && transfer != GI_TRANSFER_NOTHING)) {
+                        g_array_free (array, TRUE);
+                    }
+                    break;
                 }
+                case GI_ARRAY_TYPE_PTR_ARRAY:
+                {
+                    GPtrArray *array;
+                    array = arg->v_pointer;
 
-                g_base_info_unref ( (GIBaseInfo *) item_type_info);
-            }
+                    if ( (direction == GI_DIRECTION_IN && transfer != GI_TRANSFER_EVERYTHING)
+                            || (direction == GI_DIRECTION_OUT && transfer == GI_TRANSFER_EVERYTHING)) {
+                        GITypeInfo *item_type_info;
+                        GITransfer item_transfer;
 
-            if ( (direction == GI_DIRECTION_IN && transfer == GI_TRANSFER_NOTHING)
-                    || (direction == GI_DIRECTION_OUT && transfer != GI_TRANSFER_NOTHING)) {
-                g_array_free (array, TRUE);
+                        item_type_info = g_type_info_get_param_type (type_info, 0);
+
+                        item_transfer = direction == GI_DIRECTION_IN ? GI_TRANSFER_NOTHING : GI_TRANSFER_EVERYTHING;
+
+                        /* Free the items */
+                        for (i = 0; i < array->len; i++) {
+                            GIArgument *item;
+                            item = &g_ptr_array_index(array, i);
+                            _pygi_argument_release (item, item_type_info, item_transfer, direction);
+                        }
+
+                        g_base_info_unref ( (GIBaseInfo *) item_type_info);
+                    }
+
+                    if ( (direction == GI_DIRECTION_IN && transfer == GI_TRANSFER_NOTHING)
+                            || (direction == GI_DIRECTION_OUT && transfer != GI_TRANSFER_NOTHING)) {
+                        g_ptr_array_free (array, FALSE); // if setting TRUE => segfault
+                    }
+                    break;
+                }
             }
 
             break;
